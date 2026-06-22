@@ -36,8 +36,6 @@ None of these assumptions hold in real markets. **Deep Hedging** (Buehler et al.
 
 This project implements both approaches side by side and stress-tests the comparison under transaction costs, using real NIFTY index options/futures data for context and 1,000+ Monte Carlo–simulated price paths for training and evaluation.
 
-<!-- IMAGE SUGGESTION: A simple before/after diagram contrasting "Black-Scholes: fixed formula, no cost awareness" vs "Deep Hedger: learns from simulated P&L, cost-aware" -->
-
 ---
 
 ## Project Architecture
@@ -64,8 +62,6 @@ This project implements both approaches side by side and stress-tests the compar
                                                        └───────────────────────────────┘
 ```
 
-<!-- IMAGE SUGGESTION: Insert your actual pipeline diagram / flowchart image here -->
-
 ---
 
 ## Part 1 — Real Market Data Hedging
@@ -80,16 +76,15 @@ This is necessarily re-solved at every timestep because real market sentiment (a
 
 > **Important methodological note:** dynamically re-solving IV at every minute technically *violates* Black-Scholes's own foundational assumption of constant volatility. This is a well-known, deliberate practitioner convention — Black-Scholes is used less as "the true model of price dynamics" and more as a **quoting/translation layer** that converts an observed price into a single comparable number (IV) at each instant. This tension is the entire reason stochastic-volatility models (e.g. Heston) and deep hedging approaches exist.
 
-**Delta Hedging Loop (real data):** At each minute *t*, compute IV from the observed option price, plug into Black-Scholes to get δ*ₜ*, and accumulate trading P&L:
+**Delta Hedging Loop (real data):** At each minute *t*, compute IV from the observed option price, plug into Black-Scholes to get δ*ₜ*, and accumulate trading PnL:
 
-$$\text{P\&L}_{\text{trading}} = \sum_t \delta_t \cdot (S_{t+1} - S_t)$$
+$$\text{PnL}_{\text{trading}} = \sum_t \delta_t \cdot (S_{t+1} - S_t)$$
 
-$$\text{PL}_T = -Z_T + \text{P\&L}_{\text{trading}} - C_T(\delta)$$
+$$\text{PL}_T = -Z_T + \text{PnL}_{\text{trading}} - C_T(\delta)$$
 
 where *Z_T* is the option payoff owed at expiry (the hedger is short the option) and *C_T(δ)* is the transaction cost (zero in the simplest version).
 
-<img src="images/delta_iv_price_plot.png" alt="Project Screenshot" width="500">
-
+<img src="images/delta_iv_price_plot.png" alt="Delta, Implied Volatility, and Underlying Price over time" width="500">
 
 ---
 
@@ -106,7 +101,7 @@ $$S_{i} = S_{i-1} \cdot \exp\left[\left(\mu - \tfrac{1}{2}\sigma^2\right) dt + \
 
 Paths are split **800 / 200** (train/test) for the deep hedger.
 
-<!-- IMAGE SUGGESTION: overlay plot of ~30-50 sample GBM paths fanning out from S0 -->
+<img src="images/gbm_sample_paths.png" alt="Sample of simulated GBM price paths" width="500">
 
 ---
 
@@ -152,7 +147,7 @@ Input: T_remaining_path (375, 1) ──┘
 - **BS deltaₜ** — gives the network a sensible reference point ("learn the correction to the textbook answer" rather than learning option theory from scratch)
 - **T_remaining** — explicit time-to-expiry, so the network can learn how urgency-to-hedge changes as expiry approaches, without having to infer it implicitly from its position in the sequence
 
-<!-- IMAGE SUGGESTION: model architecture diagram (Keras plot_model output or a hand-drawn box diagram) -->
+<img src="images/gru_architecture.png" alt="GRU deep hedger architecture diagram" width="500">
 
 ---
 
@@ -164,7 +159,7 @@ Input: T_remaining_path (375, 1) ──┘
 
 **Conditional VaR (CVaR / Expected Shortfall)** answers the more informative question: *"given that we're in the worst α% of outcomes, what's the average loss?"* CVaR captures tail severity, not just where the tail begins, and is the risk measure used for training in this project (α = 0.05):
 
-$$\text{CVaR}_\alpha = -\mathbb{E}\left[\,\text{P\&L} \mid \text{P\&L} \le \text{VaR}_\alpha\,\right]$$
+$$\text{CVaR}_\alpha = -\mathbb{E}\left[\,\text{PnL} \mid \text{PnL} \le \text{VaR}_\alpha\,\right]$$
 
 ### Transaction Costs
 
@@ -172,13 +167,13 @@ Black-Scholes assumes frictionless, continuous rebalancing — unrealistic in pr
 
 $$\text{Cost}_t = c \cdot |\delta_t - \delta_{t-1}| \cdot S_t$$
 
-$$\text{Total P\&L} = -Z_T + \sum_t \delta_t (S_{t+1}-S_t) - \sum_t \text{Cost}_t$$
+$$\text{Total PnL} = -Z_T + \sum_t \delta_t (S_{t+1}-S_t) - \sum_t \text{Cost}_t$$
 
 This term is applied **identically to both the deep hedger and the Black-Scholes baseline** during evaluation — a fair comparison requires both strategies to pay the same real-world friction; giving one side free trades would invalidate the comparison entirely.
 
 ### Combined Loss Function
 
-$$\mathcal{L} = \lambda_{\text{MSE}} \cdot \text{MSE}(\delta_{\text{pred}}, \delta_{BS}) + \lambda_{\text{CVaR}} \cdot \text{CVaR}_\alpha(\text{P\&L})$$
+$$\mathcal{L} = \lambda_{\text{MSE}} \cdot \text{MSE}(\delta_{\text{pred}}, \delta_{BS}) + \lambda_{\text{CVaR}} \cdot \text{CVaR}_\alpha(\text{PnL})$$
 
 The MSE anchor term (against the Black-Scholes delta) was added for **training stability** — see below for why pure CVaR alone proved insufficient. This does not contradict the deep hedging literature: CVaR minimization remains the actual target; MSE serves as a regularizer/warm-start mechanism, a standard and well-documented technique to stabilize sparse-gradient objectives, not a deviation from the core idea.
 
@@ -227,8 +222,6 @@ Post-fix diagnostic confirmed the collapse was resolved:
 
 **Lesson:** input scale matters enormously for any architecture relying on saturating activations (sigmoid, tanh) — this is a classic, well-documented deep learning pitfall, but it's easy to overlook when raw financial price levels (tens of thousands) look unremarkable until you consider what a `tanh` or `sigmoid` gate actually does with them.
 
-<!-- IMAGE SUGGESTION: side-by-side histogram of predicted deltas before vs after the fix, visually showing a single spike vs a real distribution -->
-
 ---
 
 ## Results
@@ -253,8 +246,9 @@ Same pattern holds on the training set (316.60 vs 388.69 test CVaR; 317.50 vs 37
 
 The deep hedger trades roughly **half as reactively** as Black-Scholes, and never makes the large, sudden delta swings Black-Scholes is prone to near the strike. It sacrifices a small amount of pure hedging precision in exchange for substantially lower transaction costs and tail risk — precisely the trade-off deep hedging is designed to discover, and one Black-Scholes structurally cannot make since it has no concept of transaction costs at all.
 
-<!-- IMAGE SUGGESTION: the 2x2 P&L distribution histogram (Deep Hedger vs BS, Train vs Test) from the notebook -->
-<!-- IMAGE SUGGESTION: bar chart comparing Std Dev and CVaR side by side for both strategies -->
+<img src="images/BlackScholes_vs_Deep.png" alt="P&L distribution comparison: Deep Hedger vs Black-Scholes" width="500">
+
+<img src="images/delta_stats.png" alt="Delta statistics comparison: Deep Hedger vs Black-Scholes" width="500">
 
 ---
 
@@ -284,7 +278,7 @@ The deep hedger trades roughly **half as reactively** as Black-Scholes, and neve
 
 ## References
 
-- Hirano, M., Minami, K., Imajo, K. (2023). *Adversarial Deep Hedging: Learning to Hedge without Price Process Modeling.* — this project implements the **deep hedging component** (GRU-based hedger trained on a CVaR risk objective) described in this paper; the adversarial market-scenario generator (the GAN-style price-process-free training loop that is the paper's main contribution) was not implemented here and is noted as future work below.
+- Hirano, M., Minami, K., Imajo, K. (2023). *Adversarial Deep Hedging: Learning to Hedge without Price Process Modeling.* — this project implements the **deep hedging component** (GRU-based hedger trained on a CVaR risk objective) described in this paper; the adversarial market-scenario generator (the GAN-style price-process-free training loop that is the paper's main contribution) was not implemented here and is noted as future work above.
 - Buehler, H., Gonon, L., Teichmann, J., Wood, B. (2019). *Deep Hedging.* Quantitative Finance. — the foundational deep hedging framework (CVaR-based training objective) this project's loss function builds on.
 - Hull, J. C. *Options, Futures, and Other Derivatives.*
 - Black, F., Scholes, M. (1973). *The Pricing of Options and Corporate Liabilities.* Journal of Political Economy.
@@ -299,11 +293,11 @@ The deep hedger trades roughly **half as reactively** as Black-Scholes, and neve
 ├── HFT_CAMP_CODE.ipynb                     # full pipeline: real data → GBM → BS baseline → GRU deep hedger → evaluation
 ├── 20260205_option_minute_prices_expiry.csv  # minute-level NIFTY futures + options data, 5 Feb 2026
 └── images/
-    ├── model_architecture.png              # Keras plot_model() output of the GRU deep hedger
     ├── delta_iv_price_plot.png             # real-data hedging: delta / IV / underlying price over time
     ├── gbm_sample_paths.png                # sample of simulated GBM price paths
-    ├── pnl_distributions.png               # deep hedger vs Black-Scholes P&L histograms (train/test)
-    └── delta_collapse_before_after.png     # debugging story: predicted-delta distribution before/after the input-normalization fix
+    ├── gru_architecture.png                # GRU deep hedger model architecture diagram
+    ├── BlackScholes_vs_Deep.png            # P&L distribution comparison: deep hedger vs Black-Scholes
+    └── delta_stats.png                     # delta statistics comparison: deep hedger vs Black-Scholes
 ```
 
 ---
