@@ -88,7 +88,7 @@ $$\text{PL}_T = -Z_T + \text{P\&L}_{\text{trading}} - C_T(\delta)$$
 
 where *Z_T* is the option payoff owed at expiry (the hedger is short the option) and *C_T(δ)* is the transaction cost (zero in the simplest version).
 
-<!-- IMAGE SUGGESTION: 3-panel plot — Delta over time / Implied Vol over time / Underlying price over time -->
+![Deep Hedger GRU Architecture](images/model_architecture.png)
 
 ---
 
